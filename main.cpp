@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 #include <linux/videodev2.h>
 #include "uAPI2/rk_aiq_user_api2_sysctl.h"
 #include "common/mediactl/mediactl.h"
@@ -99,7 +98,7 @@ int rkaiq_get_media_info(struct rkaiq_media_info *media_info)
 }
 
 
-int main() 
+int main()
 {
     const uint32_t width = 1280;
     const uint32_t height = 960;
