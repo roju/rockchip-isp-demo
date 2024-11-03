@@ -1,0 +1,3 @@
+[submodule "camera_engine_rkaiq"]
+	path = camera_engine_rkaiq
+	url = https://github.com/roju/camera_engine_rkaiq.git
