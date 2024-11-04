@@ -1,18 +1,34 @@
 #include <iostream>
-#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <getopt.h> /* getopt_long() */
+#include <fcntl.h> /* low-level i/o */
+#include <inttypes.h>
+#include <unistd.h>
+#include <errno.h>
+#include <sys/ioctl.h>
+#include <pthread.h>
 
 #include <linux/videodev2.h>
 #include "uAPI2/rk_aiq_user_api2_sysctl.h"
 #include "common/mediactl/mediactl.h"
 
+#define CLEAR(x) memset(&(x), 0, sizeof(x))
 #define DBG(...) do { if(!silent) printf("DBG: " __VA_ARGS__);} while(0)
 #define ERR(...) do { fprintf(stderr, "ERR: " __VA_ARGS__); } while (0)
 
+/* Private v4l2 event */
+#define CIFISP_V4L2_EVENT_STREAM_START  \
+                    (V4L2_EVENT_PRIVATE_START + 1)
+#define CIFISP_V4L2_EVENT_STREAM_STOP   \
+                    (V4L2_EVENT_PRIVATE_START + 2)
+
 #define RKAIQ_FILE_PATH_LEN 64
 #define IQ_PATH "/etc/iqfiles/"
+
+static int width = 1280;
+static int height = 960;
 
 struct rkaiq_media_info {
     char sd_isp_path[RKAIQ_FILE_PATH_LEN];
@@ -24,11 +40,29 @@ struct rkaiq_media_info {
     char mdev_path[32];
     int available;
     rk_aiq_sys_ctx_t* aiq_ctx;
+
+    pthread_t pid;
 };
 
 static struct rkaiq_media_info media_info;
 static int silent = 0;
 
+static void errno_exit(const char *s)
+{
+    ERR("%s error %d, %s\n", s, errno, strerror(errno));
+    exit(EXIT_FAILURE);
+}
+
+static int xioctl(int fh, int request, void *arg)
+{
+    int r;
+
+    do {
+        r = ioctl(fh, request, arg);
+    } while (-1 == r && EINTR == errno);
+
+    return r;
+}
 
 static int rkaiq_get_devname(struct media_device *device, const char *name, char *dev_name)
 {
@@ -97,14 +131,131 @@ int rkaiq_get_media_info(struct rkaiq_media_info *media_info)
     return ret;
 }
 
+static void init_engine(struct rkaiq_media_info *media_info)
+{
+    media_info->aiq_ctx = rk_aiq_uapi2_sysctl_init(media_info->sensor_entity_name,
+                                                  IQ_PATH, NULL, NULL);
+
+    if (rk_aiq_uapi2_sysctl_prepare(media_info->aiq_ctx,
+            width, height, RK_AIQ_WORKING_MODE_NORMAL)) {
+        ERR("rkaiq engine prepare failed !\n");
+        exit(-1);
+    }
+}
+
+static void start_engine(struct rkaiq_media_info *media_info)
+{
+    DBG("device manager start\n");
+    rk_aiq_uapi2_sysctl_start(media_info->aiq_ctx);
+    if (media_info->aiq_ctx == NULL) {
+        ERR("rkisp_init engine failed\n");
+        exit(-1);
+    } else {
+        DBG("rkisp_init engine succeed\n");
+    }
+}
+
+static void stop_engine(struct rkaiq_media_info *media_info)
+{
+    rk_aiq_uapi2_sysctl_stop(media_info->aiq_ctx, false);
+}
+
+static void deinit_engine(struct rkaiq_media_info *media_info)
+{
+    rk_aiq_uapi2_sysctl_deinit(media_info->aiq_ctx);
+}
+
+// blocked func
+static int wait_stream_event(int fd, unsigned int event_type, int time_out_ms)
+{
+    int ret;
+    struct v4l2_event event;
+
+    CLEAR(event);
+
+    do {
+        /*
+         * xioctl instead of poll.
+         * Since poll() cannot wait for input before stream on,
+         * it will return an error directly. So, use ioctl to
+         * dequeue event and block until sucess.
+         */
+        ret = xioctl(fd, VIDIOC_DQEVENT, &event);
+        if (ret == 0 && event.type == event_type)
+            return 0;
+    } while (true);
+
+    return -1;
+
+}
+
+static int subscribe_stream_event(struct rkaiq_media_info *media_info, int fd, bool subs)
+{
+    struct v4l2_event_subscription sub;
+    int ret = 0;
+
+    CLEAR(sub);
+    sub.type = CIFISP_V4L2_EVENT_STREAM_START;
+    ret = xioctl(fd,
+                 subs ? VIDIOC_SUBSCRIBE_EVENT : VIDIOC_UNSUBSCRIBE_EVENT,
+                 &sub);
+    if (ret) {
+        ERR("can't subscribe %s start event!\n", media_info->vd_params_path);
+        exit(EXIT_FAILURE);
+    }
+
+    CLEAR(sub);
+    sub.type = CIFISP_V4L2_EVENT_STREAM_STOP;
+    ret = xioctl(fd,
+                 subs ? VIDIOC_SUBSCRIBE_EVENT : VIDIOC_UNSUBSCRIBE_EVENT,
+                 &sub);
+    if (ret) {
+        ERR("can't subscribe %s stop event!\n", media_info->vd_params_path);
+    }
+
+    DBG("subscribe events from %s success !\n", media_info->vd_params_path);
+
+    return 0;
+}
+
+void *engine_thread(void *arg)
+{
+    int isp_fd;
+    struct rkaiq_media_info *media_info;
+
+    media_info = (struct rkaiq_media_info *) arg;
+
+    isp_fd = open(media_info->vd_params_path, O_RDWR);
+    if (isp_fd < 0) {
+        ERR("open %s failed %s\n", media_info->vd_params_path, strerror(errno));
+        return NULL;
+    }
+
+    init_engine(media_info);
+    subscribe_stream_event(media_info, isp_fd, true);
+
+    for (;;) {
+        start_engine(media_info);
+        DBG("%s: wait stream start event...\n", media_info->mdev_path);
+        wait_stream_event(isp_fd, CIFISP_V4L2_EVENT_STREAM_START, -1);
+        DBG("%s: wait stream start event success ...\n", media_info->mdev_path);
+
+        DBG("%s: wait stream stop event...\n", media_info->mdev_path);
+        wait_stream_event(isp_fd, CIFISP_V4L2_EVENT_STREAM_STOP, -1);
+        DBG("%s: wait stream stop event success ...\n", media_info->mdev_path);
+
+        stop_engine(media_info);
+    }
+
+    subscribe_stream_event(media_info, isp_fd, false);
+    deinit_engine(media_info);
+    close(isp_fd);
+
+    return NULL;
+}
 
 int main()
 {
-    const uint32_t width = 1280;
-    const uint32_t height = 960;
-    const rk_aiq_working_mode_t hdr_mode = RK_AIQ_WORKING_MODE_NORMAL;
-    rk_aiq_sys_ctx_t* aiq_ctx = nullptr;
-
     sprintf(media_info.mdev_path, "/dev/media0");
     if (rkaiq_get_media_info(&media_info)) {
         ERR("Bad media topology for: %s\n", media_info.mdev_path);
@@ -112,19 +263,12 @@ int main()
     }
     fprintf(stdout, "sensor_entity_name: %s\n", media_info.sensor_entity_name);
 
-    // rk_aiq_static_info_t aiq_static_info;
-    // rk_aiq_uapi2_sysctl_enumStaticMetasByPhyId( 0, &aiq_static_info );
+    int ret = pthread_create(&media_info.pid, NULL, engine_thread, &media_info);
+    if (ret) {
+        ERR("Failed to create camera engine thread for: %s\n", media_info.mdev_path);
+        errno_exit("Create thread failed");
+    }
 
-    // aiq_ctx = rk_aiq_uapi2_sysctl_init( aiq_static_info.sensor_info.sensor_name,
-    //                                     "/usr/share/rockchip-iqfiles-rk356x",
-    //                                     nullptr,
-    //                                     nullptr );
-    // rk_aiq_uapi2_sysctl_prepare( aiq_ctx, width, height, hdr_mode );
-    // rk_aiq_uapi2_sysctl_start( aiq_ctx );
-    // std::cout << "sleep 5" << std::endl;
-    // sleep(5);
-    // rk_aiq_uapi2_sysctl_stop( aiq_ctx );
-    // rk_aiq_uapi2_sysctl_deinit( aiq_ctx );
+    pthread_join(media_info.pid, NULL);
     return 0;
 }
-
