@@ -3,20 +3,25 @@
 set -e
 
 # ssh password is stored in local file called "pw.txt"
-password=$(cat "pw.txt")
+PASSWORD=$(cat "pw.txt")
+DEV_BOARD_USER=radxa
+DEV_BOARD_HOSTNAME=radxa-zero3.local
+DEV_BOARD_CODE_DIR=/home/$DEV_BOARD_USER/rkaiq_test
 
-sshpass -p "$password" \
+# send all files in local repo to remote dev board
+sshpass -p "$PASSWORD" \
 rsync -avz \
 --exclude '.git' \
 --exclude '.gitignore' \
 --exclude '.gitmodules' \
 --exclude 'pw.txt' \
 --exclude 'run-remote.sh' \
-. radxa@radxa-zero3.local:/home/radxa/rkaiq_test
+. $DEV_BOARD_USER@$DEV_BOARD_HOSTNAME:$DEV_BOARD_CODE_DIR
 
-sshpass -p "$password" \
-ssh radxa@radxa-zero3.local << EOF
-  cd /home/radxa/rkaiq_test/
+# build and run code on remote dev board
+sshpass -p "$PASSWORD" \
+ssh $DEV_BOARD_USER@$DEV_BOARD_HOSTNAME << EOF
+  cd $DEV_BOARD_CODE_DIR
   mkdir build
   cd build
   cmake ..
