@@ -14,6 +14,7 @@ rsync -avz \
 --exclude '.git' \
 --exclude '.gitignore' \
 --exclude '.gitmodules' \
+--exclude '.vscode' \
 --exclude 'pw.txt' \
 --exclude 'run-remote.sh' \
 . $DEV_BOARD_USER@$DEV_BOARD_HOSTNAME:$DEV_BOARD_CODE_DIR
