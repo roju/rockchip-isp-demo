@@ -21,11 +21,9 @@ rsync -avz \
 
 # build and run code on remote dev board
 sshpass -p "$PASSWORD" \
-ssh $DEV_BOARD_USER@$DEV_BOARD_HOSTNAME << EOF
+ssh -tt $DEV_BOARD_USER@$DEV_BOARD_HOSTNAME << EOF
   cd $DEV_BOARD_CODE_DIR
   mkdir build
   cd build
-  cmake ..
-  make
-  ./rkaiq_test
+  cmake .. && make &&  sudo -S <<< $PASSWORD ./rkaiq_test
 EOF
