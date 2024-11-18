@@ -7,7 +7,12 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set_property(GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "CMakeTargets")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=c++11 -fPIC")
 set(CAMERA_ENGINE_RKAIQ_DIR ${PROJECT_SOURCE_DIR}/camera_engine_rkaiq)
-set(RKAIQ_LIBRARY_DIR ${CAMERA_ENGINE_RKAIQ_DIR}/rkaiq/all_lib/Release)
+
+# use librkaiq.so provided by system
+# set(RKAIQ_LIBRARY_DIR /usr/lib)
+
+# use librkaiq.so from local build
+set(RKAIQ_LIBRARY_DIR ${CAMERA_ENGINE_RKAIQ_DIR}/build/rkaiq/all_lib/Release)
 
 message("rkaiq src path: " ${CAMERA_ENGINE_RKAIQ_DIR}/rkaiq)
 message("rkaiq lib path: " ${RKAIQ_LIBRARY_DIR})
