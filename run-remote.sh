@@ -25,5 +25,5 @@ ssh -tt $DEV_BOARD_USER@$DEV_BOARD_HOSTNAME << EOF
   cd $DEV_BOARD_CODE_DIR
   mkdir build
   cd build
-  cmake .. && make &&  sudo -S <<< $PASSWORD ./rkaiq_test
+  cmake .. && make &&  sudo -S <<< $PASSWORD ./rkaiq_test || exit
 EOF
