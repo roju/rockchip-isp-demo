@@ -13,6 +13,7 @@
 #include <linux/videodev2.h>
 #include "uAPI2/rk_aiq_user_api2_sysctl.h"
 #include "common/mediactl/mediactl.h"
+#include "uAPI2/rk_aiq_user_api2_imgproc.h"
 
 #define CLEAR(x) memset(&(x), 0, sizeof(x))
 #define DBG(...) do { if(!silent) printf("DBG: " __VA_ARGS__);} while(0)
@@ -186,7 +187,6 @@ static int wait_stream_event(int fd, unsigned int event_type, int time_out_ms)
     } while (true);
 
     return -1;
-
 }
 
 static int subscribe_stream_event(struct rkaiq_media_info *media_info, int fd, bool subs)
@@ -239,6 +239,21 @@ void *engine_thread(void *arg)
         DBG("%s: wait stream start event...\n", media_info->mdev_path);
         wait_stream_event(isp_fd, CIFISP_V4L2_EVENT_STREAM_START, -1);
         DBG("%s: wait stream start event success ...\n", media_info->mdev_path);
+
+        // reset to default values
+        rk_aiq_uapi2_setBrightness(media_info->aiq_ctx, 128);
+        rk_aiq_uapi2_setSharpness(media_info->aiq_ctx, 128);
+        rk_aiq_uapi2_setColorMode(media_info->aiq_ctx, 0);
+
+        DBG("waiting for 3A auto adjustment...\n");
+        sleep(3);
+
+        // increase brightness
+        rk_aiq_uapi2_setBrightness(media_info->aiq_ctx, 200);
+        // set color mode to black and white
+        rk_aiq_uapi2_setColorMode(media_info->aiq_ctx, 1);
+        // increase sharpness
+        rk_aiq_uapi2_setSharpness(media_info->aiq_ctx, 100);
 
         DBG("%s: wait stream stop event...\n", media_info->mdev_path);
         wait_stream_event(isp_fd, CIFISP_V4L2_EVENT_STREAM_STOP, -1);
