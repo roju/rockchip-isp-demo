@@ -1,5 +1,6 @@
 #!/bin/bash
 
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 set -e
 
 # ssh password is stored in local file called "pw.txt"
@@ -17,7 +18,7 @@ rsync -avz \
 --exclude '.vscode' \
 --exclude 'pw.txt' \
 --exclude 'run-remote.sh' \
-. $DEV_BOARD_USER@$DEV_BOARD_HOSTNAME:$DEV_BOARD_CODE_DIR
+$SCRIPT_DIR/ $DEV_BOARD_USER@$DEV_BOARD_HOSTNAME:$DEV_BOARD_CODE_DIR
 
 # build and run code on remote dev board
 sshpass -p "$PASSWORD" \
