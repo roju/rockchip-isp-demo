@@ -1,4 +1,4 @@
-# rkaiq_test
+# Rockchip ISP Demo
 
 This code demonstrates using Rockchip hardware ISP to manipulate a live video stream from a camera connected to the CSI port while 3A algorithms are running. It will start the 3A server, wait a few seconds for the 3A auto adjustment to finish, and then make some clearly visible changes to the video stream.
 
